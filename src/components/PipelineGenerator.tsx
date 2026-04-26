@@ -1,86 +1,32 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { Wand2, Copy, Check, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 
 const PipelineGenerator = () => {
   const [prompt, setPrompt] = useState("");
   const [output, setOutput] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
-  const { toast } = useToast();
-  const abortRef = useRef<AbortController | null>(null);
 
   const handleGenerate = async () => {
-    if (!prompt.trim() || isGenerating) return;
+    if (!prompt.trim()) return;
 
     setIsGenerating(true);
     setOutput("");
-    abortRef.current = new AbortController();
 
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-pipeline`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({ prompt }),
-          signal: abortRef.current.signal,
-        }
-      );
+      const response = await fetch("http://localhost:5000/api/pipeline/generate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Failed to generate pipeline");
-      }
-
-      if (!response.body) throw new Error("No response stream");
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let accumulated = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
-
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
-
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const content = parsed.choices?.[0]?.delta?.content;
-            if (content) {
-              accumulated += content;
-              setOutput(accumulated);
-            }
-          } catch {
-            buffer = line + "\n" + buffer;
-            break;
-          }
-        }
-      }
-    } catch (e: any) {
-      if (e.name !== "AbortError") {
-        toast({
-          title: "Generation failed",
-          description: e.message || "Something went wrong",
-          variant: "destructive",
-        });
-      }
+      const data = await response.json();
+      setOutput(data.pipeline);
+    } catch (error) {
+      console.log(error);
+      setOutput("Error generating pipeline");
     } finally {
       setIsGenerating(false);
     }
@@ -96,12 +42,17 @@ const PipelineGenerator = () => {
     <section className="py-24 px-6">
       <div className="container mx-auto max-w-6xl">
         <div className="text-center mb-12">
-          <span className="text-sm font-mono text-primary mb-2 block">AI PIPELINE GENERATION</span>
+          <span className="text-sm font-mono text-primary mb-2 block">
+            AI PIPELINE GENERATION
+          </span>
+
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
             Describe it. We'll build it.
           </h2>
+
           <p className="text-muted-foreground max-w-xl mx-auto">
-            Transform plain-English descriptions into production-ready CI/CD configurations — powered by AI.
+            Transform plain-English descriptions into production-ready CI/CD
+            configurations — powered by AI.
           </p>
         </div>
 
@@ -112,14 +63,18 @@ const PipelineGenerator = () => {
               <div className="w-3 h-3 rounded-full bg-destructive/60" />
               <div className="w-3 h-3 rounded-full bg-warning/60" />
               <div className="w-3 h-3 rounded-full bg-success/60" />
-              <span className="ml-2 text-xs font-mono text-muted-foreground">prompt.txt</span>
+              <span className="ml-2 text-xs font-mono text-muted-foreground">
+                prompt.txt
+              </span>
             </div>
+
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Deploy a Node.js app to Kubernetes with testing, Docker build, and rolling updates on push to main..."
               className="w-full h-48 bg-transparent text-foreground font-mono text-sm resize-none outline-none placeholder:text-muted-foreground/50"
             />
+
             <button
               onClick={handleGenerate}
               disabled={isGenerating || !prompt.trim()}
@@ -128,7 +83,7 @@ const PipelineGenerator = () => {
               {isGenerating ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating…
+                  Generating...
                 </>
               ) : (
                 <>
@@ -146,20 +101,33 @@ const PipelineGenerator = () => {
                 <div className="w-3 h-3 rounded-full bg-destructive/60" />
                 <div className="w-3 h-3 rounded-full bg-warning/60" />
                 <div className="w-3 h-3 rounded-full bg-success/60" />
-                <span className="ml-2 text-xs font-mono text-muted-foreground">.github/workflows/deploy.yml</span>
+                <span className="ml-2 text-xs font-mono text-muted-foreground">
+                  .github/workflows/deploy.yml
+                </span>
               </div>
+
               {output && (
-                <button onClick={handleCopy} className="text-muted-foreground hover:text-primary transition-colors">
-                  {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+                <button
+                  onClick={handleCopy}
+                  className="text-muted-foreground hover:text-primary transition-colors"
+                >
+                  {copied ? (
+                    <Check className="w-4 h-4 text-success" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
                 </button>
               )}
             </div>
+
             <pre className="h-48 overflow-auto text-sm font-mono leading-relaxed">
               {output ? (
                 <code className="text-foreground/90">{output}</code>
               ) : (
                 <code className="text-muted-foreground/40 italic">
-                  {isGenerating ? "// Generating..." : "// Generated pipeline will appear here..."}
+                  {isGenerating
+                    ? "// Generating..."
+                    : "// Generated pipeline will appear here..."}
                 </code>
               )}
             </pre>
